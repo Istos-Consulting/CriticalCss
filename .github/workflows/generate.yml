@@ -36,8 +36,8 @@ jobs:
       - name: Check out versioned CriticalCss implementation
         uses: actions/checkout@v4
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: Istos-Consulting/CriticalCss
+          ref: v0.1.1
           path: criticalcss
 
       - name: Set up Node
