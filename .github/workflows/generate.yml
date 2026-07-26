@@ -1,0 +1,178 @@
+name: CriticalCss reusable generator
+
+on:
+  workflow_call:
+    inputs:
+      connector_url:
+        required: true
+        type: string
+      css_path:
+        required: true
+        type: string
+      queue_updated_at:
+        required: false
+        type: string
+    secrets:
+      api_token:
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: critical-css-${{ github.repository }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Check out client repository
+        uses: actions/checkout@v4
+        with:
+          path: client
+          fetch-depth: 0
+
+      - name: Check out versioned CriticalCss implementation
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: criticalcss
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: criticalcss/package-lock.json
+
+      - name: Install generation dependencies
+        working-directory: criticalcss
+        env:
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+        run: npm ci
+
+      - name: Download MODX queue
+        env:
+          CONNECTOR_URL: ${{ inputs.connector_url }}
+          API_TOKEN: ${{ secrets.api_token }}
+        run: |
+          mkdir -p runtime
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            "${CONNECTOR_URL}?action=queue" \
+            --output runtime/queue.json
+          jq empty runtime/queue.json
+
+      - name: Check queue
+        id: queue
+        run: |
+          count=$(jq '.resources | length' runtime/queue.json)
+          full=$(jq -r '.full_rebuild' runtime/queue.json)
+          if [ "$count" = "0" ] && [ "$full" != "true" ]; then
+            empty=true
+          else
+            empty=false
+          fi
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "empty=$empty" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve and download source CSS
+        if: steps.queue.outputs.empty != 'true'
+        env:
+          CONNECTOR_URL: ${{ inputs.connector_url }}
+          CSS_PATH: ${{ inputs.css_path }}
+        run: |
+          css_url=$(node -e \
+            'const [connector,path]=process.argv.slice(1); const root=new URL("/",connector); console.log(new URL(path,root).href)' \
+            "$CONNECTOR_URL" "$CSS_PATH")
+          curl --fail-with-body --location --silent --show-error \
+            "$css_url" \
+            --output runtime/styles.min.css
+          cp runtime/styles.min.css runtime/styles.penthouse.css
+
+      - name: Select queued or globally affected resources
+        if: steps.queue.outputs.empty != 'true'
+        env:
+          CONNECTOR_URL: ${{ inputs.connector_url }}
+          API_TOKEN: ${{ secrets.api_token }}
+        run: |
+          current_hash=$(sha256sum runtime/styles.penthouse.css | cut -d " " -f 1)
+          previous_hash=$(jq -r '.__criticalcss.stylesheetHash // ""' \
+            client/assets/css/critical/critical-manifest.json 2>/dev/null || true)
+          full=$(jq -r '.full_rebuild' runtime/queue.json)
+
+          if [ "$full" = "true" ] || [ "$current_hash" != "$previous_hash" ]; then
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer ${API_TOKEN}" \
+              "${CONNECTOR_URL}?action=eligible" \
+              --output runtime/eligible.json
+            jq --slurpfile eligible runtime/eligible.json \
+              '.resources = $eligible[0].resources' \
+              runtime/queue.json \
+              > runtime/work.json
+          else
+            cp runtime/queue.json runtime/work.json
+          fi
+
+      - name: Generate Critical CSS
+        if: steps.queue.outputs.empty != 'true'
+        env:
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: |
+          mkdir -p client/assets/css/critical
+          node criticalcss/scripts/generate-critical-css.js \
+            runtime/work.json \
+            runtime/styles.penthouse.css \
+            client/assets/css/critical/
+
+      - name: Build ingestion payload
+        if: steps.queue.outputs.empty != 'true'
+        run: |
+          node criticalcss/scripts/build-upload-payload.js \
+            client/assets/css/critical/ \
+            runtime/queue.json \
+            client/assets/css/critical/changed-files.txt \
+            client/assets/css/critical/acknowledged-resources.txt \
+            client/assets/css/critical/generation-status.json \
+            > runtime/updates.json
+          jq empty runtime/updates.json
+
+      - name: Ingest generated CSS
+        if: steps.queue.outputs.empty != 'true'
+        env:
+          CONNECTOR_URL: ${{ inputs.connector_url }}
+          API_TOKEN: ${{ secrets.api_token }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            "${CONNECTOR_URL}?action=ingest" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data @runtime/updates.json
+
+      - name: Persist comparison manifest
+        if: steps.queue.outputs.empty != 'true'
+        working-directory: client
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/css/critical/critical-manifest.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Update Critical CSS manifest"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## CriticalCss"
+            echo "- Queued resources: ${{ steps.queue.outputs.count }}"
+            echo "- Full rebuild: ${{ steps.queue.outputs.full }}"
+            echo "- Status: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
