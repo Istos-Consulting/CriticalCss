@@ -1,6 +1,6 @@
 {
   "name": "@istos-consulting/criticalcss-workflow",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Versioned generation runtime for the CriticalCss MODX Extra.",
   "license": "UNLICENSED",
