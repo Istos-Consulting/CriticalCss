@@ -16,7 +16,7 @@ const changedPath = path.join(outputDir, 'changed-files.txt');
 const acknowledgedPath = path.join(outputDir, 'acknowledged-resources.txt');
 const statusPath = path.join(outputDir, 'generation-status.json');
 const META_KEY = '__criticalcss';
-const PENTHOUSE_CONCURRENCY = 6;
+const PENTHOUSE_CONCURRENCY = 5;
 const CHECK_CONCURRENCY = 30;
 
 let manifest = {};
@@ -139,16 +139,19 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
 }
 
 async function generateResource(result) {
-  const files = await Promise.all([
-    penthouseVariant(result.resource, result.url, 'mobile', {
+  const files = [];
+  files.push(
+    await penthouseVariant(result.resource, result.url, 'mobile', {
       width: 390,
       height: 844
-    }),
-    penthouseVariant(result.resource, result.url, 'desktop', {
+    })
+  );
+  files.push(
+    await penthouseVariant(result.resource, result.url, 'desktop', {
       width: 1300,
       height: 900
     })
-  ]);
+  );
 
   return files.every(Boolean)
     ? { resource: result.resource, files }
@@ -220,6 +223,15 @@ async function generateResource(result) {
     PENTHOUSE_CONCURRENCY,
     generateResource
   );
+  const failedResources = [
+    ...resources
+      .filter((_, index) => !checks[index])
+      .map(item => item.resource),
+    ...rebuildQueue
+      .filter((_, index) => !generated[index])
+      .map(item => item.resource)
+  ].filter((resource, index, values) => values.indexOf(resource) === index)
+    .sort((left, right) => left - right);
 
   generated.filter(Boolean).forEach(item => {
     const source = rebuildQueue.find(result => result.resource === item.resource);
@@ -255,6 +267,7 @@ async function generateResource(result) {
         generatedFiles: changedFiles.length,
         acknowledgedResources: uniqueAcknowledged.length,
         candidateResources: resources.length,
+        failedResources,
         durationSeconds: Math.round((Date.now() - started) / 1000)
       },
       null,
@@ -266,6 +279,7 @@ async function generateResource(result) {
   console.log(`Candidate resources: ${resources.length}`);
   console.log(`Generated files: ${changedFiles.length}`);
   console.log(`Acknowledged resources: ${uniqueAcknowledged.length}`);
+  console.log(`Failed resources: ${failedResources.join(', ') || 'none'}`);
 
   if (!allResourcesCompleted) {
     process.exitCode = 1;

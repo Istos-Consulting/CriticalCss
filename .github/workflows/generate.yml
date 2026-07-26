@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.4
+          ref: v0.1.5
           path: criticalcss
 
       - name: Set up Node
@@ -121,15 +121,20 @@ jobs:
           echo "count=$(jq '.resources | length' runtime/work.json)" >> "$GITHUB_OUTPUT"
 
       - name: Generate Critical CSS
+        id: generation
         if: steps.queue.outputs.empty != 'true'
         env:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
         run: |
           mkdir -p client/assets/css/critical
+          set +e
           node criticalcss/scripts/generate-critical-css.js \
             runtime/work.json \
             runtime/styles.penthouse.css \
             client/assets/css/critical/
+          exit_code=$?
+          set -e
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
       - name: Build ingestion payload
         if: steps.queue.outputs.empty != 'true'
@@ -170,6 +175,13 @@ jobs:
           git commit -m "Update Critical CSS manifest"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Report incomplete generation
+        if: steps.queue.outputs.empty != 'true' && steps.generation.outputs.exit_code != '0'
+        run: |
+          jq . client/assets/css/critical/generation-status.json
+          echo "::error::Critical CSS generation was incomplete. Successful resources were ingested; failed resources remain queued for retry."
+          exit 1
 
       - name: Summary
         if: always()
