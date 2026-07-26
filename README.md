@@ -8,7 +8,7 @@ Client repositories contain a small caller workflow:
 ```yaml
 jobs:
   generate:
-    uses: Istos-Consulting/CriticalCss/.github/workflows/generate.yml@v0.1.1
+    uses: Istos-Consulting/CriticalCss/.github/workflows/generate.yml@v0.1.3
     with:
       connector_url: ${{ inputs.connector_url }}
       css_path: ${{ inputs.css_path }}
@@ -29,8 +29,8 @@ Client callers must reference an existing immutable version tag. Publish the
 central workflow and scripts before creating the corresponding tag:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 Do not store site CSS, generated Critical CSS, API tokens, or client comparison
