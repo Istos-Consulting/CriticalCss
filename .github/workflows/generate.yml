@@ -6,12 +6,15 @@ on:
       connector_url:
         required: true
         type: string
+
       css_path:
         required: true
         type: string
+
       queue_updated_at:
         required: false
         type: string
+
     secrets:
       api_token:
         required: true
@@ -22,6 +25,7 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
+
     concurrency:
       group: critical-css-${{ github.repository }}
       cancel-in-progress: false
@@ -59,11 +63,16 @@ jobs:
           API_TOKEN: ${{ secrets.api_token }}
         run: |
           mkdir -p runtime
-          curl --fail-with-body --silent --show-error \
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             "${CONNECTOR_URL}?action=queue" \
             --output runtime/queue.json
+
           jq empty runtime/queue.json
 
       - name: Check queue
@@ -71,27 +80,71 @@ jobs:
         run: |
           count=$(jq '.resources | length' runtime/queue.json)
           full=$(jq -r '.full_rebuild' runtime/queue.json)
+
           if [ "$count" = "0" ] && [ "$full" != "true" ]; then
             empty=true
           else
             empty=false
           fi
+
           echo "count=$count" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "empty=$empty" >> "$GITHUB_OUTPUT"
 
+          echo "====================================="
+          echo "CriticalCss queue"
+          echo "====================================="
+          echo "Queued resources: ${count}"
+          echo "Full rebuild:     ${full}"
+          echo "Empty queue:      ${empty}"
+          echo "====================================="
+
       - name: Resolve and download source CSS
+        id: stylesheet
         if: steps.queue.outputs.empty != 'true'
         env:
           CONNECTOR_URL: ${{ inputs.connector_url }}
           API_TOKEN: ${{ secrets.api_token }}
         run: |
-          curl --fail-with-body --location --silent --show-error \
+          curl \
+            --fail-with-body \
+            --location \
+            --silent \
+            --show-error \
+            --dump-header runtime/stylesheet-headers.txt \
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             "${CONNECTOR_URL}?action=stylesheet" \
             --output runtime/styles.min.css
+
           cp runtime/styles.min.css runtime/styles.penthouse.css
+
+          stylesheet_name=$(
+            grep -i '^X-CriticalCss-Stylesheet:' runtime/stylesheet-headers.txt \
+              | tail -n 1 \
+              | cut -d ':' -f 2- \
+              | tr -d '\r' \
+              | xargs
+          )
+
+          if [ -z "${stylesheet_name}" ]; then
+            stylesheet_name="unknown"
+          fi
+
+          stylesheet_bytes=$(wc -c < runtime/styles.min.css)
+          stylesheet_hash=$(sha256sum runtime/styles.penthouse.css | cut -d " " -f 1)
+
+          echo "filename=${stylesheet_name}" >> "$GITHUB_OUTPUT"
+          echo "bytes=${stylesheet_bytes}" >> "$GITHUB_OUTPUT"
+          echo "hash=${stylesheet_hash}" >> "$GITHUB_OUTPUT"
+
+          echo "====================================="
+          echo "Downloaded source stylesheet"
+          echo "====================================="
+          echo "Filename: ${stylesheet_name}"
+          echo "Bytes:    ${stylesheet_bytes}"
+          echo "SHA-256:  ${stylesheet_hash}"
+          echo "====================================="
 
       - name: Select queued or globally affected resources
         id: selection
@@ -100,25 +153,78 @@ jobs:
           CONNECTOR_URL: ${{ inputs.connector_url }}
           API_TOKEN: ${{ secrets.api_token }}
         run: |
-          current_hash=$(sha256sum runtime/styles.penthouse.css | cut -d " " -f 1)
-          previous_hash=$(jq -r '.__criticalcss.stylesheetHash // ""' \
-            client/assets/css/critical/critical-manifest.json 2>/dev/null || true)
+          current_hash="${{ steps.stylesheet.outputs.hash }}"
+
+          previous_hash=$(
+            jq -r '.__criticalcss.stylesheetHash // ""' \
+              client/assets/css/critical/critical-manifest.json \
+              2>/dev/null || true
+          )
+
           full=$(jq -r '.full_rebuild' runtime/queue.json)
 
-          if [ "$full" = "true" ] || [ "$current_hash" != "$previous_hash" ]; then
-            curl --fail-with-body --silent --show-error \
+          if [ -z "${previous_hash}" ]; then
+            previous_hash_status="missing"
+          else
+            previous_hash_status="${previous_hash}"
+          fi
+
+          if [ "${current_hash}" != "${previous_hash}" ]; then
+            stylesheet_changed=true
+          else
+            stylesheet_changed=false
+          fi
+
+          if [ "$full" = "true" ]; then
+            selection_reason="Full rebuild requested"
+          elif [ "$stylesheet_changed" = "true" ]; then
+            selection_reason="Stylesheet hash changed"
+          else
+            selection_reason="Queued resources only"
+          fi
+
+          echo "stylesheet_changed=${stylesheet_changed}" >> "$GITHUB_OUTPUT"
+          echo "current_hash=${current_hash}" >> "$GITHUB_OUTPUT"
+          echo "previous_hash=${previous_hash}" >> "$GITHUB_OUTPUT"
+          echo "reason=${selection_reason}" >> "$GITHUB_OUTPUT"
+
+          echo "====================================="
+          echo "Stylesheet comparison"
+          echo "====================================="
+          echo "CSS filename:       ${{ steps.stylesheet.outputs.filename }}"
+          echo "Current hash:       ${current_hash}"
+          echo "Previous hash:      ${previous_hash_status}"
+          echo "Hash changed:       ${stylesheet_changed}"
+          echo "Full rebuild:       ${full}"
+          echo "Selection reason:   ${selection_reason}"
+          echo "====================================="
+
+          if [ "$full" = "true" ] || [ "$stylesheet_changed" = "true" ]; then
+            curl \
+              --fail-with-body \
+              --silent \
+              --show-error \
               -H "X-CriticalCss-Token: ${API_TOKEN}" \
               -H "Authorization: Bearer ${API_TOKEN}" \
               "${CONNECTOR_URL}?action=eligible" \
               --output runtime/eligible.json
-            jq --slurpfile eligible runtime/eligible.json \
+
+            jq empty runtime/eligible.json
+
+            jq \
+              --slurpfile eligible runtime/eligible.json \
               '.resources = $eligible[0].resources' \
               runtime/queue.json \
               > runtime/work.json
           else
             cp runtime/queue.json runtime/work.json
           fi
-          echo "count=$(jq '.resources | length' runtime/work.json)" >> "$GITHUB_OUTPUT"
+
+          selected_count=$(jq '.resources | length' runtime/work.json)
+
+          echo "count=${selected_count}" >> "$GITHUB_OUTPUT"
+
+          echo "Selected resources: ${selected_count}"
 
       - name: Generate Critical CSS
         id: generation
@@ -127,13 +233,18 @@ jobs:
           PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
         run: |
           mkdir -p client/assets/css/critical
+
           set +e
+
           node criticalcss/scripts/generate-critical-css.js \
             runtime/work.json \
             runtime/styles.penthouse.css \
             client/assets/css/critical/
+
           exit_code=$?
+
           set -e
+
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
       - name: Build ingestion payload
@@ -146,6 +257,7 @@ jobs:
             client/assets/css/critical/acknowledged-resources.txt \
             client/assets/css/critical/generation-status.json \
             > runtime/updates.json
+
           jq empty runtime/updates.json
 
       - name: Ingest generated CSS
@@ -154,7 +266,10 @@ jobs:
           CONNECTOR_URL: ${{ inputs.connector_url }}
           API_TOKEN: ${{ secrets.api_token }}
         run: |
-          curl --fail-with-body --silent --show-error \
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
             -X POST \
             "${CONNECTOR_URL}?action=ingest" \
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
@@ -168,10 +283,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add assets/css/critical/critical-manifest.json
+
           if git diff --cached --quiet; then
+            echo "Comparison manifest has not changed."
             exit 0
           fi
+
           git commit -m "Update Critical CSS manifest"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
@@ -180,7 +299,9 @@ jobs:
         if: steps.queue.outputs.empty != 'true' && steps.generation.outputs.exit_code != '0'
         run: |
           jq . client/assets/css/critical/generation-status.json
+
           echo "::error::Critical CSS generation was incomplete. Successful resources were ingested; failed resources remain queued for retry."
+
           exit 1
 
       - name: Summary
@@ -188,6 +309,13 @@ jobs:
         run: |
           {
             echo "## CriticalCss"
+            echo ""
+            echo "- CSS filename: ${{ steps.stylesheet.outputs.filename }}"
+            echo "- CSS bytes: ${{ steps.stylesheet.outputs.bytes }}"
+            echo "- Current CSS hash: ${{ steps.selection.outputs.current_hash }}"
+            echo "- Previous CSS hash: ${{ steps.selection.outputs.previous_hash }}"
+            echo "- Stylesheet changed: ${{ steps.selection.outputs.stylesheet_changed }}"
+            echo "- Selection reason: ${{ steps.selection.outputs.reason }}"
             echo "- Queued resources: ${{ steps.queue.outputs.count }}"
             echo "- Selected resources: ${{ steps.selection.outputs.count }}"
             echo "- Full rebuild: ${{ steps.queue.outputs.full }}"
