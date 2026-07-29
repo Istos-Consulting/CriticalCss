@@ -159,6 +159,7 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
       height: viewport.height,
       timeout: 60000,
       renderWaitTime: 1000,
+      keepLargerMediaQueries: viewportName === 'desktop',
       blockJSRequests: true,
       puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
