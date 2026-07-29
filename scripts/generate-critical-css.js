@@ -199,8 +199,8 @@ async function generateResource(result) {
   );
   files.push(
     await penthouseVariant(result.resource, result.url, 'desktop', {
-      width: 1300,
-      height: 900
+      width: 1368,
+      height: 1000
     })
   );
 
