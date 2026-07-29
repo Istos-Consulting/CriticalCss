@@ -16,8 +16,10 @@ const changedPath = path.join(outputDir, 'changed-files.txt');
 const acknowledgedPath = path.join(outputDir, 'acknowledged-resources.txt');
 const statusPath = path.join(outputDir, 'generation-status.json');
 const META_KEY = '__criticalcss';
-const PENTHOUSE_CONCURRENCY = 5;
-const CHECK_CONCURRENCY = 30;
+const NORMAL_PENTHOUSE_CONCURRENCY = 5;
+const FULL_REBUILD_PENTHOUSE_CONCURRENCY = 3;
+const NORMAL_CHECK_CONCURRENCY = 30;
+const FULL_REBUILD_CHECK_CONCURRENCY = 6;
 
 let manifest = {};
 try {
@@ -100,6 +102,51 @@ async function concurrent(items, limit, task) {
   return results;
 }
 
+function wait(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function fetchPage(entry, fullRebuild) {
+  const maximumAttempts = fullRebuild ? 4 : 1;
+  const timeout = fullRebuild ? 60000 : 30000;
+  const retryDelays = [2000, 5000, 10000];
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    try {
+      const response = await fetch(entry.url, {
+        signal: AbortSignal.timeout(timeout)
+      });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.retryable = [500, 502, 503, 504].includes(response.status);
+        throw error;
+      }
+      return await response.text();
+    } catch (error) {
+      const canRetry =
+        fullRebuild &&
+        attempt < maximumAttempts &&
+        (error.retryable || error.name === 'TimeoutError' || error.name === 'AbortError');
+
+      if (!canRetry) {
+        console.error(
+          `[Page fetch failed] ${entry.resource}: ${error.message || error}`
+        );
+        return null;
+      }
+
+      const delay = retryDelays[attempt - 1] + Math.floor(Math.random() * 1000);
+      console.warn(
+        `[Page fetch retry] ${entry.resource}: attempt ${attempt} failed ` +
+        `(${error.message || error}); retrying in ${delay}ms`
+      );
+      await wait(delay);
+    }
+  }
+
+  return null;
+}
+
 async function penthouseVariant(resource, url, viewportName, viewport) {
   const target = path.join(outputDir, `${resource}.${viewportName}.css`);
   const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
@@ -167,27 +214,23 @@ async function generateResource(result) {
   const stylesheetChanged = previousMetadata.stylesheetHash !== stylesheetHash;
   const queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
   const resources = normaliseResources(queue.resources);
+  const fullRebuild = Boolean(queue.full_rebuild);
+  const checkConcurrency = fullRebuild
+    ? FULL_REBUILD_CHECK_CONCURRENCY
+    : NORMAL_CHECK_CONCURRENCY;
+  const penthouseConcurrency = fullRebuild
+    ? FULL_REBUILD_PENTHOUSE_CONCURRENCY
+    : NORMAL_PENTHOUSE_CONCURRENCY;
   if (resources.length !== (queue.resources || []).length) {
     throw new Error('Queue contains an invalid resource ID/URL entry.');
   }
 
   const checks = await concurrent(
     resources,
-    CHECK_CONCURRENCY,
+    checkConcurrency,
     async entry => {
-      let html;
-      try {
-        const response = await fetch(entry.url, {
-          signal: AbortSignal.timeout(30000)
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        html = await response.text();
-      } catch (error) {
-        console.error(
-          `[Page fetch failed] ${entry.resource}: ${error.message || error}`
-        );
+      const html = await fetchPage(entry, fullRebuild);
+      if (html === null) {
         return null;
       }
 
@@ -222,7 +265,7 @@ async function generateResource(result) {
 
   const generated = await concurrent(
     rebuildQueue,
-    PENTHOUSE_CONCURRENCY,
+    penthouseConcurrency,
     generateResource
   );
   const failedResources = [
@@ -280,6 +323,11 @@ async function generateResource(result) {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
   console.log(`Candidate resources: ${resources.length}`);
+  console.log(
+    `Execution profile: ${fullRebuild ? 'full rebuild (throttled)' : 'normal update (bursty)'}`
+  );
+  console.log(`Page-check concurrency: ${checkConcurrency}`);
+  console.log(`Penthouse concurrency: ${penthouseConcurrency}`);
   console.log(`Stylesheet changed: ${stylesheetChanged ? 'yes' : 'no'}`);
   console.log(`Penthouse rebuilds: ${rebuildQueue.length}`);
   console.log(`Generated files: ${changedFiles.length}`);
