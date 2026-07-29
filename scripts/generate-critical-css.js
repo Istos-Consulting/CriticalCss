@@ -164,6 +164,7 @@ async function generateResource(result) {
 
   const cssText = fs.readFileSync(cssFile, 'utf8');
   const stylesheetHash = sha256(cssText);
+  const stylesheetChanged = previousMetadata.stylesheetHash !== stylesheetHash;
   const queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
   const resources = normaliseResources(queue.resources);
   if (resources.length !== (queue.resources || []).length) {
@@ -203,7 +204,8 @@ async function generateResource(result) {
           !previous.classHash ||
           !previous.cssHash ||
           previous.classHash !== classHash ||
-          previous.cssHash !== cssHash
+          previous.cssHash !== cssHash ||
+          (stylesheetChanged && previous.stylesheetHash !== stylesheetHash)
       };
     }
   );
@@ -240,6 +242,7 @@ async function generateResource(result) {
     manifest[item.resource] = {
       classHash: source.classHash,
       cssHash: source.cssHash,
+      stylesheetHash,
       lastGenerated: new Date().toISOString()
     };
   });
@@ -277,6 +280,8 @@ async function generateResource(result) {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
   console.log(`Candidate resources: ${resources.length}`);
+  console.log(`Stylesheet changed: ${stylesheetChanged ? 'yes' : 'no'}`);
+  console.log(`Penthouse rebuilds: ${rebuildQueue.length}`);
   console.log(`Generated files: ${changedFiles.length}`);
   console.log(`Acknowledged resources: ${uniqueAcknowledged.length}`);
   console.log(`Failed resources: ${failedResources.join(', ') || 'none'}`);
