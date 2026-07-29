@@ -147,6 +147,10 @@ jobs:
             client/assets/css/critical/generation-status.json \
             > runtime/updates.json
           jq empty runtime/updates.json
+          node criticalcss/scripts/write-upload-batches.js \
+            runtime/updates.json \
+            runtime/upload-batches \
+            524288
 
       - name: Ingest generated CSS
         if: steps.queue.outputs.empty != 'true'
@@ -154,13 +158,16 @@ jobs:
           CONNECTOR_URL: ${{ inputs.connector_url }}
           API_TOKEN: ${{ secrets.api_token }}
         run: |
-          curl --fail-with-body --silent --show-error \
-            -X POST \
-            "${CONNECTOR_URL}?action=ingest" \
-            -H "X-CriticalCss-Token: ${API_TOKEN}" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data @runtime/updates.json
+          for payload in runtime/upload-batches/*.json; do
+            echo "Uploading $(basename "$payload") ($(wc -c < "$payload") bytes)"
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              "${CONNECTOR_URL}?action=ingest" \
+              -H "X-CriticalCss-Token: ${API_TOKEN}" \
+              -H "Authorization: Bearer ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-binary "@${payload}"
+          done
 
       - name: Persist comparison manifest
         if: steps.queue.outputs.empty != 'true'
