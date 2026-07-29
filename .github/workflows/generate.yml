@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.9
+          ref: v0.1.10
           path: criticalcss
 
       - name: Set up Node
@@ -162,15 +162,12 @@ jobs:
             payload_bytes=$(wc -c < "$payload")
             echo "Uploading $(basename "$payload") (${payload_bytes} bytes)"
             jq -e '.updates | type == "array"' "$payload" > /dev/null
-            curl --http1.0 --fail-with-body --silent --show-error \
+            curl --fail-with-body --silent --show-error \
               -X POST \
               "${CONNECTOR_URL}?action=ingest" \
               -H "X-CriticalCss-Token: ${API_TOKEN}" \
               -H "Authorization: Bearer ${API_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -H "Content-Length: ${payload_bytes}" \
-              -H "Expect:" \
-              --data-binary "@${payload}"
+              --form "payload=@${payload};type=application/json"
           done
 
       - name: Persist comparison manifest
