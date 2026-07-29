@@ -160,6 +160,9 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
       timeout: 60000,
       renderWaitTime: 1000,
       keepLargerMediaQueries: viewportName === 'desktop',
+      forceInclude: viewportName === 'desktop'
+        ? [/\.col-(?:sm|md|lg|xl|xxl)-\d+/]
+        : [],
       blockJSRequests: true,
       puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
