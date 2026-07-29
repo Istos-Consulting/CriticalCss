@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.8
+          ref: v0.1.9
           path: criticalcss
 
       - name: Set up Node
@@ -159,14 +159,17 @@ jobs:
           API_TOKEN: ${{ secrets.api_token }}
         run: |
           for payload in runtime/upload-batches/*.json; do
-            echo "Uploading $(basename "$payload") ($(wc -c < "$payload") bytes)"
+            payload_bytes=$(wc -c < "$payload")
+            echo "Uploading $(basename "$payload") (${payload_bytes} bytes)"
             jq -e '.updates | type == "array"' "$payload" > /dev/null
-            curl --fail-with-body --silent --show-error \
+            curl --http1.0 --fail-with-body --silent --show-error \
               -X POST \
               "${CONNECTOR_URL}?action=ingest" \
               -H "X-CriticalCss-Token: ${API_TOKEN}" \
               -H "Authorization: Bearer ${API_TOKEN}" \
               -H "Content-Type: application/json" \
+              -H "Content-Length: ${payload_bytes}" \
+              -H "Expect:" \
               --data-binary "@${payload}"
           done
 
