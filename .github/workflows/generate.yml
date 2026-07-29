@@ -71,7 +71,8 @@ jobs:
         run: |
           count=$(jq '.resources | length' runtime/queue.json)
           full=$(jq -r '.full_rebuild' runtime/queue.json)
-          if [ "$count" = "0" ] && [ "$full" != "true" ]; then
+          css_rebuild=$(jq -r '.css_rebuild // false' runtime/queue.json)
+          if [ "$count" = "0" ] && [ "$full" != "true" ] && [ "$css_rebuild" != "true" ]; then
             empty=true
           else
             empty=false
@@ -90,8 +91,15 @@ jobs:
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             "${CONNECTOR_URL}?action=stylesheet" \
+            --dump-header runtime/styles.headers \
             --output runtime/styles.min.css
           cp runtime/styles.min.css runtime/styles.penthouse.css
+          filename=$(awk -F': ' 'tolower($1) == "x-criticalcss-stylesheet" {gsub("\r", "", $2); print $2}' runtime/styles.headers)
+          current_hash=$(sha256sum runtime/styles.penthouse.css | cut -d " " -f 1)
+          previous_hash=$(jq -r '.__criticalcss.stylesheetHash // "not recorded"' client/assets/css/critical/critical-manifest.json 2>/dev/null || echo "not recorded")
+          echo "Downloaded CSS: ${filename:-unknown}"
+          echo "Downloaded CSS SHA-256: ${current_hash}"
+          echo "Manifest CSS SHA-256: ${previous_hash}"
 
       - name: Select queued or globally affected resources
         id: selection

@@ -47,6 +47,9 @@ batches.forEach((updates, index) => {
     full_rebuild_completed: finalBatch
       ? Boolean(payload.full_rebuild_completed)
       : false,
+    css_rebuild_completed: finalBatch
+      ? Boolean(payload.css_rebuild_completed)
+      : false,
     acknowledged_resources: finalBatch && Array.isArray(payload.acknowledged_resources)
       ? payload.acknowledged_resources
       : [],

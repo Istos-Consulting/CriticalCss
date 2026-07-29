@@ -42,6 +42,7 @@ changed.forEach(filename => {
 process.stdout.write(JSON.stringify({
   updates: [...updates.values()],
   full_rebuild_completed: Boolean(status.fullRebuildCompleted),
+  css_rebuild_completed: Boolean(queue.css_rebuild && status.allResourcesCompleted),
   acknowledged_resources: [...new Set(acknowledged)],
   queue_updated_at: queue.updated_at || null
 }));
