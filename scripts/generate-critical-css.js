@@ -17,9 +17,9 @@ const acknowledgedPath = path.join(outputDir, 'acknowledged-resources.txt');
 const statusPath = path.join(outputDir, 'generation-status.json');
 const META_KEY = '__criticalcss';
 const NORMAL_PENTHOUSE_CONCURRENCY = 5;
-const FULL_REBUILD_PENTHOUSE_CONCURRENCY = 3;
+const THROTTLED_PENTHOUSE_CONCURRENCY = 3;
 const NORMAL_CHECK_CONCURRENCY = 30;
-const FULL_REBUILD_CHECK_CONCURRENCY = 6;
+const THROTTLED_CHECK_CONCURRENCY = 6;
 
 let manifest = {};
 try {
@@ -106,9 +106,9 @@ function wait(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-async function fetchPage(entry, fullRebuild) {
-  const maximumAttempts = fullRebuild ? 4 : 1;
-  const timeout = fullRebuild ? 60000 : 30000;
+async function fetchPage(entry, throttled) {
+  const maximumAttempts = throttled ? 4 : 1;
+  const timeout = throttled ? 60000 : 30000;
   const retryDelays = [2000, 5000, 10000];
 
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
@@ -124,7 +124,7 @@ async function fetchPage(entry, fullRebuild) {
       return await response.text();
     } catch (error) {
       const canRetry =
-        fullRebuild &&
+        throttled &&
         attempt < maximumAttempts &&
         (error.retryable || error.name === 'TimeoutError' || error.name === 'AbortError');
 
@@ -219,11 +219,13 @@ async function generateResource(result) {
   const queue = JSON.parse(fs.readFileSync(queueFile, 'utf8'));
   const resources = normaliseResources(queue.resources);
   const fullRebuild = Boolean(queue.full_rebuild);
-  const checkConcurrency = fullRebuild
-    ? FULL_REBUILD_CHECK_CONCURRENCY
+  const cssRebuild = Boolean(queue.css_rebuild);
+  const throttled = fullRebuild || cssRebuild || resources.length >= 100;
+  const checkConcurrency = throttled
+    ? THROTTLED_CHECK_CONCURRENCY
     : NORMAL_CHECK_CONCURRENCY;
-  const penthouseConcurrency = fullRebuild
-    ? FULL_REBUILD_PENTHOUSE_CONCURRENCY
+  const penthouseConcurrency = throttled
+    ? THROTTLED_PENTHOUSE_CONCURRENCY
     : NORMAL_PENTHOUSE_CONCURRENCY;
   if (resources.length !== (queue.resources || []).length) {
     throw new Error('Queue contains an invalid resource ID/URL entry.');
@@ -233,7 +235,7 @@ async function generateResource(result) {
     resources,
     checkConcurrency,
     async entry => {
-      const html = await fetchPage(entry, fullRebuild);
+      const html = await fetchPage(entry, throttled);
       if (html === null) {
         return null;
       }
@@ -328,7 +330,7 @@ async function generateResource(result) {
 
   console.log(`Candidate resources: ${resources.length}`);
   console.log(
-    `Execution profile: ${fullRebuild ? 'full rebuild (throttled)' : 'normal update (bursty)'}`
+    `Execution profile: ${throttled ? 'large workload (throttled)' : 'small update (bursty)'}`
   );
   console.log(`Page-check concurrency: ${checkConcurrency}`);
   console.log(`Penthouse concurrency: ${penthouseConcurrency}`);
