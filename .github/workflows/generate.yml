@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.10
+          ref: v0.1.11
           path: criticalcss
 
       - name: Set up Node
@@ -150,7 +150,7 @@ jobs:
           node criticalcss/scripts/write-upload-batches.js \
             runtime/updates.json \
             runtime/upload-batches \
-            65536
+            524288
 
       - name: Ingest generated CSS
         if: steps.queue.outputs.empty != 'true'
@@ -159,9 +159,7 @@ jobs:
           API_TOKEN: ${{ secrets.api_token }}
         run: |
           for payload in runtime/upload-batches/*.json; do
-            payload_bytes=$(wc -c < "$payload")
-            echo "Uploading $(basename "$payload") (${payload_bytes} bytes)"
-            jq -e '.updates | type == "array"' "$payload" > /dev/null
+            echo "Uploading $(basename "$payload")"
             curl --fail-with-body --silent --show-error \
               -X POST \
               "${CONNECTOR_URL}?action=ingest" \
