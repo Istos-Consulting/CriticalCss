@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.18
+          ref: v0.1.19
           path: criticalcss
 
       - name: Set up Node

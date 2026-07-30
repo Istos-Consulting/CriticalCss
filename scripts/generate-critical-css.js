@@ -21,6 +21,34 @@ const THROTTLED_PENTHOUSE_CONCURRENCY = 3;
 const NORMAL_CHECK_CONCURRENCY = 30;
 const THROTTLED_CHECK_CONCURRENCY = 6;
 
+function bootstrapGridSelectors() {
+  const selectors = ['.row', '.col'];
+  const breakpoints = ['sm', 'md', 'lg', 'xl', 'xxl'];
+
+  for (let size = 1; size <= 12; size += 1) {
+    selectors.push(`.col-${size}`, `.offset-${size}`, `.order-${size}`);
+    breakpoints.forEach(breakpoint => {
+      selectors.push(
+        `.col-${breakpoint}-${size}`,
+        `.offset-${breakpoint}-${size}`,
+        `.order-${breakpoint}-${size}`
+      );
+    });
+  }
+
+  breakpoints.forEach(breakpoint => {
+    selectors.push(
+      `.col-${breakpoint}`,
+      `.order-${breakpoint}-first`,
+      `.order-${breakpoint}-last`
+    );
+  });
+
+  return selectors;
+}
+
+const DESKTOP_FORCE_INCLUDE = bootstrapGridSelectors();
+
 let manifest = {};
 try {
   manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -161,7 +189,7 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
       renderWaitTime: 1000,
       keepLargerMediaQueries: viewportName === 'desktop',
       forceInclude: viewportName === 'desktop'
-        ? [/\.col-(?:sm|md|lg|xl|xxl)-\d+/]
+        ? DESKTOP_FORCE_INCLUDE
         : [],
       blockJSRequests: true,
       puppeteer: {
