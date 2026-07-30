@@ -17,9 +17,9 @@ const acknowledgedPath = path.join(outputDir, 'acknowledged-resources.txt');
 const statusPath = path.join(outputDir, 'generation-status.json');
 const META_KEY = '__criticalcss';
 const NORMAL_PENTHOUSE_CONCURRENCY = 5;
-const THROTTLED_PENTHOUSE_CONCURRENCY = 3;
+const THROTTLED_PENTHOUSE_CONCURRENCY = 6;
 const NORMAL_CHECK_CONCURRENCY = 30;
-const THROTTLED_CHECK_CONCURRENCY = 6;
+const THROTTLED_CHECK_CONCURRENCY = 12;
 
 function bootstrapGridSelectors() {
   const selectors = ['.row', '.col'];
