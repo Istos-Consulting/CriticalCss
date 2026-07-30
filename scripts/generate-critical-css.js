@@ -278,6 +278,7 @@ async function generateResource(result) {
         classHash,
         cssHash,
         needsRebuild:
+          fullRebuild ||
           !previous.classHash ||
           !previous.cssHash ||
           previous.classHash !== classHash ||
