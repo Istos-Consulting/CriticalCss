@@ -21,34 +21,6 @@ const THROTTLED_PENTHOUSE_CONCURRENCY = 6;
 const NORMAL_CHECK_CONCURRENCY = 30;
 const THROTTLED_CHECK_CONCURRENCY = 12;
 
-function bootstrapGridSelectors() {
-  const selectors = ['.row', '.col'];
-  const breakpoints = ['sm', 'md', 'lg', 'xl', 'xxl'];
-
-  for (let size = 1; size <= 12; size += 1) {
-    selectors.push(`.col-${size}`, `.offset-${size}`, `.order-${size}`);
-    breakpoints.forEach(breakpoint => {
-      selectors.push(
-        `.col-${breakpoint}-${size}`,
-        `.offset-${breakpoint}-${size}`,
-        `.order-${breakpoint}-${size}`
-      );
-    });
-  }
-
-  breakpoints.forEach(breakpoint => {
-    selectors.push(
-      `.col-${breakpoint}`,
-      `.order-${breakpoint}-first`,
-      `.order-${breakpoint}-last`
-    );
-  });
-
-  return selectors;
-}
-
-const DESKTOP_FORCE_INCLUDE = bootstrapGridSelectors();
-
 let manifest = {};
 try {
   manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -188,9 +160,6 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
       timeout: 60000,
       renderWaitTime: 1000,
       keepLargerMediaQueries: viewportName === 'desktop',
-      forceInclude: viewportName === 'desktop'
-        ? DESKTOP_FORCE_INCLUDE
-        : [],
       blockJSRequests: true,
       puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
