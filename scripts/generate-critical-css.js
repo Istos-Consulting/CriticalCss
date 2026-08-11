@@ -3,6 +3,9 @@ const path = require('path');
 const crypto = require('crypto');
 const cheerio = require('cheerio');
 const penthouse = require('penthouse');
+const {
+  pruneImpossibleMediaQueries
+} = require('./prune-impossible-media');
 
 const [queueFile, cssFile, outputDir] = process.argv.slice(2);
 if (!queueFile || !cssFile || !outputDir) {
@@ -20,6 +23,7 @@ const NORMAL_PENTHOUSE_CONCURRENCY = 5;
 const THROTTLED_PENTHOUSE_CONCURRENCY = 6;
 const NORMAL_CHECK_CONCURRENCY = 30;
 const THROTTLED_CHECK_CONCURRENCY = 12;
+const prunedMediaQueries = { mobile: 0, desktop: 0 };
 
 let manifest = {};
 try {
@@ -172,7 +176,9 @@ async function penthouseVariant(resource, url, viewportName, viewport) {
         headless: 'new'
       }
     });
-    fs.writeFileSync(temporary, css);
+    const pruned = pruneImpossibleMediaQueries(css, viewportName);
+    prunedMediaQueries[viewportName] += pruned.removed;
+    fs.writeFileSync(temporary, pruned.css);
     fs.renameSync(temporary, target);
     return path.basename(target);
   } catch (error) {
@@ -335,6 +341,10 @@ async function generateResource(result) {
   console.log(`Stylesheet changed: ${stylesheetChanged ? 'yes' : 'no'}`);
   console.log(`Penthouse rebuilds: ${rebuildQueue.length}`);
   console.log(`Generated files: ${changedFiles.length}`);
+  console.log(
+    `Pruned impossible media queries: mobile ${prunedMediaQueries.mobile}, ` +
+    `desktop ${prunedMediaQueries.desktop}`
+  );
   console.log(`Acknowledged resources: ${uniqueAcknowledged.length}`);
   console.log(`Failed resources: ${failedResources.join(', ') || 'none'}`);
 

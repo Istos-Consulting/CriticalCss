@@ -62,7 +62,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
-            "${CONNECTOR_URL}?action=queue" \
+            "${CONNECTOR_URL}?action=queue&_criticalcss_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --output runtime/queue.json
           jq empty runtime/queue.json
 
@@ -90,7 +90,7 @@ jobs:
           curl --fail-with-body --location --silent --show-error \
             -H "X-CriticalCss-Token: ${API_TOKEN}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
-            "${CONNECTOR_URL}?action=stylesheet" \
+            "${CONNECTOR_URL}?action=stylesheet&_criticalcss_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --dump-header runtime/styles.headers \
             --output runtime/styles.min.css
           cp runtime/styles.min.css runtime/styles.penthouse.css
@@ -117,7 +117,7 @@ jobs:
             curl --fail-with-body --silent --show-error \
               -H "X-CriticalCss-Token: ${API_TOKEN}" \
               -H "Authorization: Bearer ${API_TOKEN}" \
-              "${CONNECTOR_URL}?action=eligible" \
+              "${CONNECTOR_URL}?action=eligible&_criticalcss_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
               --output runtime/eligible.json
             jq --slurpfile eligible runtime/eligible.json \
               '.resources = $eligible[0].resources' \
@@ -170,7 +170,7 @@ jobs:
             echo "Uploading $(basename "$payload")"
             curl --fail-with-body --silent --show-error \
               -X POST \
-              "${CONNECTOR_URL}?action=ingest" \
+              "${CONNECTOR_URL}?action=ingest&_criticalcss_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
               -H "X-CriticalCss-Token: ${API_TOKEN}" \
               -H "Authorization: Bearer ${API_TOKEN}" \
               --form "payload=@${payload};type=application/json"

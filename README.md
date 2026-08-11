@@ -8,7 +8,7 @@ Client repositories contain a small caller workflow:
 ```yaml
 jobs:
   generate:
-    uses: Istos-Consulting/CriticalCss/.github/workflows/generate.yml@v0.1.21
+    uses: Istos-Consulting/CriticalCss/.github/workflows/generate.yml@v0.1.22
     with:
       connector_url: ${{ inputs.connector_url }}
       css_path: ${{ inputs.css_path }}
@@ -29,9 +29,13 @@ Client callers must reference an existing immutable version tag. Publish the
 central workflow and scripts before creating the corresponding tag:
 
 ```bash
-git tag v0.1.21
-git push origin v0.1.21
+git tag v0.1.22
+git push origin v0.1.22
 ```
+
+Generated mobile and desktop files are post-processed to remove media queries
+whose width ranges cannot intersect the media attribute used by that variant.
+Unknown or complex media-query syntax is retained conservatively.
 
 Do not store site CSS, generated Critical CSS, API tokens, or client comparison
 manifests in this central repository.
