@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Istos-Consulting/CriticalCss
-          ref: v0.1.22
+          ref: v0.1.23
           path: criticalcss
 
       - name: Set up Node
@@ -167,7 +167,11 @@ jobs:
           API_TOKEN: ${{ secrets.api_token }}
         run: |
           for payload in runtime/upload-batches/*.json; do
-            echo "Uploading $(basename "$payload")"
+            batch=$(basename "$payload")
+            update_count=$(jq '.updates | length' "$payload")
+            resource_ids=$(jq -c '[.updates[].resource]' "$payload")
+            echo "Uploading ${batch}: ${update_count} updates"
+            echo "Resources: ${resource_ids}"
             curl --fail-with-body --silent --show-error \
               -X POST \
               "${CONNECTOR_URL}?action=ingest&_criticalcss_nonce=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
@@ -175,6 +179,15 @@ jobs:
               -H "Authorization: Bearer ${API_TOKEN}" \
               --form "payload=@${payload};type=application/json"
           done
+
+      - name: Preserve failed ingestion batches
+        if: failure() && steps.queue.outputs.empty != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-css-upload-batches-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/upload-batches/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Persist comparison manifest
         if: steps.queue.outputs.empty != 'true'
